@@ -1,0 +1,153 @@
+---
+title: "Practical Machine Learning Test"
+author: "Song Boon"
+date: "Sunday, March 15, 2015"
+output: html_document
+---
+
+##Background
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement - a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: http://groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset). 
+
+##Data 
+
+The data for this project come from this source: http://groupware.les.inf.puc-rio.br/har. I would like to thank them for the generousity to share the data. It is recommended that you familiarise yourself with the data using MS Excel before proceeding.
+
+The training data for this project are available here: 
+
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv
+
+The test data are available here: 
+
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv
+
+
+##Load the libraries and setting the seed for reproduceability:
+
+```{r}
+library(lattice)
+library(caret)
+library(randomForest) #Random forest for classification and regression
+library(rpart) # Regressive Partitioning and Regression trees
+library(rpart.plot) # Decision Tree plot
+
+# setting the overall seed for reproduceability
+set.seed(1234)
+```
+
+##Loading data sets and clean the data
+I down loaded the training and test data into my local directory.
+All values are coded as string "#DIV/0!" or "" or "NA" - these will be changed to NA.
+I noticed that both data sets contain columns with all missing values - these will be deleted.  
+
+
+```{r}
+# Loading the training data set into my R session replacing all missing with "NA"
+trainingset <- read.csv("./pml-training.csv", na.strings=c("NA","#DIV/0!", ""))
+
+## Loading the testing data set 
+testingset <- read.csv('./pml-testing.csv', na.strings=c("NA","#DIV/0!", ""))
+
+## Check the data size
+dim(trainingset)
+dim(testingset)
+
+## Delete columns with all missing values
+trainingset <- trainingset[,colSums(is.na(trainingset)) == 0]
+testingset <- testingset[,colSums(is.na(testingset)) == 0]
+
+## Delete all unwanted columns
+trainingset <- trainingset[,-c(1:7)]
+testingset <- testingset[,-c(1:7)]
+
+## Let's find out the size after cleaning:
+dim(trainingset)
+dim(testingset)
+
+## Let's have a look at our new datasets:
+head(trainingset, 3)
+head(testingset, 3)
+```
+
+##Partitioning the training data set to allow cross-validation
+
+The training data set contains 53 variables and 19622 observations.
+The testing data set contains 53 variables and  20 observations.
+In order to perform cross-validation, the training data set is partionned into 2 sets: 75% subTraining and 25% subTest.
+This will be performed using random subsampling without replacement.
+
+```{r}
+subsamples <- createDataPartition(y=trainingset$classe, p=0.75, list=FALSE)
+subTraining <- trainingset[subsamples, ] 
+subTesting <- trainingset[-subsamples, ]
+dim(subTraining)
+dim(subTesting)
+head(subTraining, 3)
+head(subTesting, 3)
+```
+
+## Take a look at the data graphically
+
+The variable "classe" contains 5 levels: A, B, C, D and E. A plot of the outcome variable will allow us to see the frequency of each levels in the subTraining data set and compare one another.
+
+```{r}
+plot(subTraining$classe, col="blue", main="Bar Plot of levels of the variable classe within the subTraining data set", xlab="classe levels", ylab="Frequency")
+```
+From the graph above, we can see that each level frequency is within the same order of magnitude of each other. Level A is the most frequent with more than 4000 occurrences while level D is the least frequent with about 2500 occurrences.
+
+## First prediction model: Using Decision Tree
+
+```{r}
+modeldecisiontree <- rpart(classe ~ ., data=subTraining, method="class")
+
+## Predicting:
+predictiondecisiontree <- predict(modeldecisiontree, subTesting, type = "class")
+
+## Plot of the Decision Tree
+rpart.plot(modeldecisiontree, main="Classification Tree", extra=102, under=TRUE, faclen=0)
+
+## Test results on our subTesting data set:
+confusionMatrix(predictiondecisiontree, subTesting$classe)
+```
+
+##Second prediction model: Using Random Forest
+
+```{r}
+modelrandomforest <- randomForest(classe ~. , data=subTraining, method="class")
+
+# Predicting:
+predictionrandomforest <- predict(modelrandomforest, subTesting, type = "class")
+
+# Test results on subTesting data set:
+confusionMatrix(predictionrandomforest, subTesting$classe)
+```
+
+##Decision
+
+As expected, Random Forest algorithm performed better than Decision Trees.
+Accuracy for Random Forest model was 0.995 compared to 0.739 and 95% CI is (0.993, 0.997) compared to (0.727, 0.752). 
+Thus the random Forest model is choosen. 
+The accuracy of the model is 0.995. 
+The expected out-of-sample error is estimated at 0.005, or 0.5%. 
+The expected out-of-sample error is calculated as 1 - accuracy for predictions made against the cross-validation set. 
+
+
+##Generate the 20 submission files
+
+```{r}
+# predict outcome levels on the original Testing data set using Random Forest algorithm
+predictfinal <- predict(modelrandomforest, testingset, type="class")
+predictfinal
+
+# Write files for submission
+pml_write_files = function(x){
+  n = length(x)
+  for(i in 1:n){
+    filename = paste0("problem_id_",i,".txt")
+    write.table(x[i],file=filename,quote=FALSE,row.names=FALSE,col.names=FALSE)
+  }
+}
+
+pml_write_files(predictfinal)
+```
+
